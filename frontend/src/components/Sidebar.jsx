@@ -5,7 +5,6 @@ import {
   Radio, 
   BarChart3, 
   Code2, 
-  Settings,
   Cpu
 } from 'lucide-react';
 
@@ -22,7 +21,7 @@ export default function Sidebar({ activeTab, onSelectTab, incidentCount }) {
     <aside className="sticky top-16 h-[calc(100vh-4rem)] w-60 border-r border-white/10 bg-dark-950/40 p-4 backdrop-blur-md flex flex-col justify-between">
       <div className="space-y-1">
         <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-          Telemetry & Crashes
+          Telemetry
         </div>
 
         {navItems.map((item) => {
@@ -60,14 +59,13 @@ export default function Sidebar({ activeTab, onSelectTab, incidentCount }) {
         })}
       </div>
 
-      {/* Claude AI Engine Badge */}
       <div className="rounded-xl border border-white/10 bg-dark-900/60 p-3.5 text-xs">
         <div className="flex items-center gap-2 text-rose-400">
           <Cpu className="h-4 w-4" />
-          <span className="font-semibold text-white">Claude 3.5 Sonnet</span>
+          <span className="font-semibold text-white">Analysis Engine</span>
         </div>
         <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
-          Clustered stack traces analyzed for root cause & remediation in real time.
+          Clusters normalized stack traces and executes root cause diagnosis.
         </p>
       </div>
     </aside>

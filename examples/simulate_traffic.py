@@ -1,81 +1,88 @@
-"""
-Faultline Traffic & Crash Generator
-Simulates realistic production crash events across multiple microservices to populate the dashboard.
-"""
-
-import time
+import argparse
 import random
+import time
 import faultline
 
-def run_simulation(endpoint="http://localhost:8000", total_events=25):
-    print(f"🚀 Initializing Faultline Traffic Generator targeting {endpoint}...")
-    
+
+def run_traffic_generator(endpoint: str, api_key: str, count: int, rate: float):
+    print(f"Connecting to Faultline at {endpoint}...")
+
     faultline.init(
-        api_key="fl_live_production_demo_key_99",
+        api_key=api_key,
         endpoint=endpoint,
         environment="production",
         release="v2.4.1",
         auto_hook=False
     )
-    
-    users = [
-        {"id": "usr_9481", "email": "alex.dev@corp.internal"},
-        {"id": "usr_2041", "email": "sarah.admin@enterprise.io"},
-        {"id": "usr_7719", "email": "guest_customer_99@gmail.com"}
+
+    test_identities = [
+        {"id": "usr_9481", "email": "dev.operator@internal.corp"},
+        {"id": "usr_2041", "email": "platform.lead@enterprise.io"},
+        {"id": "usr_7719", "email": "checkout.service@system.local"}
     ]
 
-    print(f"⚡ Generating {total_events} realistic crash events across services...")
+    scenarios = ["key_error", "zero_division", "db_timeout", "null_pointer", "type_error"]
 
-    for i in range(total_events):
-        choice = random.choice(["key_error", "zero_division", "db_timeout", "null_pointer", "type_error"])
-        user = random.choice(users)
-        faultline.set_user(id=user["id"], email=user["email"])
-        
+    for index in range(count):
+        scenario = random.choice(scenarios)
+        identity = random.choice(test_identities)
+        faultline.set_user(id=identity["id"], email=identity["email"])
+
         try:
-            if choice == "key_error":
-                faultline.add_breadcrumb("User clicked 'Confirm Purchase'", category="ui")
-                faultline.add_breadcrumb("Validating order payload", category="validation", data={"items_count": 3})
-                faultline.add_breadcrumb("Calling payment processor Stripe v3", category="http")
-                payload = {"amount": 120.50}  # missing customer_id
+            if scenario == "key_error":
+                faultline.add_breadcrumb("Order payload validation", category="validation", data={"items": 3})
+                faultline.add_breadcrumb("Payment gateway dispatch", category="http")
+                payload: dict[str, float] = {"amount": 120.50}
                 _ = payload["customer_id"]
-                
-            elif choice == "zero_division":
-                faultline.add_breadcrumb("Calculating cart promotional discount", category="pricing")
-                faultline.add_breadcrumb("Applying bulk tier coupon code SUMMER_2026", category="coupon")
-                total_items = 0
-                unit_price = 150.0 / total_items
-                
-            elif choice == "db_timeout":
-                faultline.add_breadcrumb("Acquiring Postgres connection from pool", category="database")
-                faultline.add_breadcrumb("Query: SELECT * FROM orders WHERE status = 'pending' FOR UPDATE", category="sql")
-                raise TimeoutError("Database connection timed out after 5000ms: pool exhausted (max=20)")
 
-            elif choice == "null_pointer":
-                faultline.add_breadcrumb("Fetching user profile from Redis cache", category="cache", data={"hit": False})
-                faultline.add_breadcrumb("Querying user profile from primary database", category="database")
-                profile = None
-                name = profile.full_name  # AttributeError
+            elif scenario == "zero_division":
+                faultline.add_breadcrumb("Discount calculation", category="pricing")
+                total_units = 0
+                _ = 150.0 / total_units
 
-            elif choice == "type_error":
-                faultline.add_breadcrumb("Parsing JSON response from downstream inventory service", category="http")
-                qty = "unlimited"
-                total = 10 + qty
+            elif scenario == "db_timeout":
+                faultline.add_breadcrumb("Connection acquisition", category="database")
+                raise TimeoutError("Database connection pool exhausted: 20/20 active connections.")
 
-        except Exception as err:
-            level = "critical" if choice in ("db_timeout", "null_pointer") else "error"
+            elif scenario == "null_pointer":
+                faultline.add_breadcrumb("Cache lookup miss", category="cache")
+                account = None
+                _ = account.display_name
+
+            elif scenario == "type_error":
+                faultline.add_breadcrumb("Downstream inventory payload parsing", category="http")
+                count_str: Any = "invalid_int"
+                _ = 10 + count_str
+
+        except Exception as exc:
+            severity = "critical" if scenario in ("db_timeout", "null_pointer") else "error"
             faultline.capture_exception(
-                err, 
-                tags={"service": f"service-{choice}", "region": "us-east-1"},
+                exc,
+                tags={"service": f"service-{scenario}", "region": "us-east-1"},
                 handled=False,
-                level=level
+                level=severity
             )
-            print(f"  [{i+1}/{total_events}] Captured {type(err).__name__} ({choice})")
-            
-        time.sleep(0.08)
+            print(f"[{index + 1}/{count}] Captured {type(exc).__name__} ({scenario})")
 
-    print("✨ Flushing pending SDK events to Faultline Ingestion Pipeline...")
-    faultline.get_client().close()
-    print("✅ All simulated crash events successfully transmitted!")
+        time.sleep(1.0 / rate if rate > 0 else 0.05)
+
+    client = faultline.get_client()
+    if client:
+        client.close()
+    print("Event flush complete.")
+
 
 if __name__ == "__main__":
-    run_simulation()
+    parser = argparse.ArgumentParser(description="Faultline Telemetry Traffic Generator")
+    parser.add_argument("--endpoint", default="http://localhost:8000", help="Faultline server endpoint")
+    parser.add_argument("--key", default="fl_live_production_demo_key_99", help="Project API key")
+    parser.add_argument("--count", type=int, default=25, help="Number of telemetry events to generate")
+    parser.add_argument("--rate", type=float, default=10.0, help="Events per second")
+    args = parser.parse_args()
+
+    run_traffic_generator(
+        endpoint=args.endpoint,
+        api_key=args.key,
+        count=args.count,
+        rate=args.rate
+    )

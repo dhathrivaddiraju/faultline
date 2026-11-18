@@ -1,194 +1,138 @@
-# Faultline – AI Error Monitoring & Observability Platform
+# Faultline
 
-<p align="center">
-  <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
-  <img src="https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL" />
-  <img src="https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white" alt="Redis" />
-  <img src="https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React" />
-  <img src="https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white" alt="Tailwind" />
-  <img src="https://img.shields.io/badge/Claude_3.5_Sonnet-D97706?style=for-the-badge&logo=anthropic&logoColor=white" alt="Claude" />
-  <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker" />
-</p>
+Faultline is an error-tracking and observability service for client and server applications. It ingests exception traces, groups recurring failures via deterministic fingerprinting, and provides automated root-cause analysis and patch proposals using Claude 3.5 Sonnet.
 
-**Faultline** is a high-throughput, centralized observability and error-tracking SaaS (akin to Sentry or Bugsnag). It captures unhandled exceptions, panics, and critical logs from client/server applications via a lightweight custom SDK, aggregates high-volume event streams (**100K+ daily events**) with **sub-15ms ingestion latency**, groups similar traces into intelligent clusters, and leverages **Claude 3.5 Sonnet** to auto-generate root-cause summaries, vulnerable code snippets, and remediation plans.
-
----
-
-## 🏛 Architecture & Data Flow
+## Architecture
 
 ```mermaid
 flowchart TD
-    subgraph Client Applications
-        APP["Microservice / Web App"]
-        SDK["Custom Python SDK (faultline)"]
-        APP -->|Unhandled Exception / @capture| SDK
+    subgraph Client
+        APP["Application Code"]
+        SDK["Python SDK (faultline)"]
+        APP -->|Exception| SDK
     end
 
-    subgraph High-Throughput Ingestion Pipeline
-        SDK -->|"Gzip HTTP POST /api/v1/capture (Sub-15ms)"| INGEST["FastAPI Ingestion API"]
-        CACHE[("Redis Key Cache (<1ms Auth)")] <--> INGEST
-        INGEST -->|"LPUSH / XADD Buffer"| STREAM[("Redis Queue / Stream")]
-        INGEST -->|"202 Accepted"| SDK
+    subgraph Ingestion
+        SDK -->|"POST /api/v1/capture"| API["FastAPI Ingestion API"]
+        CACHE[("Redis Key Cache")] <--> API
+        API -->|"Queue Push"| QUEUE[("Redis Stream / Queue")]
+        API -->|"202 Accepted"| SDK
     end
 
-    subgraph Async Background Worker Pool
-        STREAM -->|"Batch Pop (50-100 items)"| WORKER["Ingestion Workers"]
-        NORM["Stack Trace Normalizer & Fingerprinter"] <--> WORKER
-        AI_SVC["Claude 3.5 Sonnet AI Engine"] <-->|Root Cause & Remediation| WORKER
+    subgraph Worker Pool
+        QUEUE -->|"Batch Fetch"| WORKER["Ingestion Worker"]
+        NORM["Fingerprint Normalizer"] <--> WORKER
+        LLM["Claude Analysis Engine"] <--> WORKER
     end
 
-    subgraph Relational Storage & Real-Time Stream
-        WORKER -->|"Bulk Insert (Partitioned)"| PG[("PostgreSQL Database")]
-        WORKER -->|"Live Event Broadcast"| WS["WebSocket Manager"]
+    subgraph Persistence
+        WORKER -->|"Bulk Insert"| DB[("PostgreSQL")]
+        WORKER -->|"Event Broadcast"| WS["WebSocket Manager"]
     end
 
-    subgraph Modern Frontend Dashboard
-        WS -->|"Realtime Stream"| UI["React + Tailwind + Vite Dashboard"]
-        PG -->|"REST /api/v1/incidents"| UI
+    subgraph Dashboard
+        WS -->|"Live Feed"| UI["React Dashboard"]
+        DB -->|"REST Queries"| UI
     end
 ```
 
----
+## System Components
 
-## ⚡ Key Highlights & Benchmarks
+- Ingestion API: Asynchronous FastAPI service terminating inbound telemetry over HTTP. API keys are cached in Redis to minimize database read overhead. Validated payloads are enqueued to a Redis queue for processing.
+- Clustering Engine: Normalizes stack traces by removing memory addresses, UUIDs, and timestamps, producing a canonical SHA-256 fingerprint for error deduplication.
+- Analysis Engine: Queries the Claude 3.5 Sonnet API to extract the root cause, identify vulnerable lines, and format a unified remediation diff. When an API key is not present, a rule-based evaluation engine provides baseline diagnostics.
+- PostgreSQL Storage: Stores projects, error groups (incidents), and raw event records. The events table schema supports range partitioning by date.
+- Python SDK: Background worker thread with an unbounded queue that batches telemetry payloads without blocking the main runtime thread. Registers standard exception hooks and atexit cleanup handlers.
+- Dashboard: React and Tailwind CSS application providing incident inspection, stack frame folding, breadcrumb timelines, and live WebSocket telemetry feeds.
 
-- **Sub-15ms Ingestion Latency**: Async FastAPI endpoint validates incoming payloads and pushes to Redis queue immediately returning HTTP 202.
-- **Intelligent Error Clustering**: Deterministic SHA-256 fingerprinting that strips memory addresses (`0x7f8...`), UUIDs, and timestamps to eliminate duplicate incident noise.
-- **Claude 3.5 Sonnet Integration**: Auto-generates:
-  1. **Root Cause Hypothesis**: Human-readable explanation of why the crash occurred.
-  2. **Vulnerable Code Snippet**: Highlights the line of code that failed.
-  3. **Step-by-Step Remediation Plan**: Actionable checklist to resolve the failure.
-  4. **Suggested Fix Diff**: Unified git-style diff showing the code fix.
-- **Custom Python SDK**:
-  - Global `sys.excepthook` and `threading.excepthook` captures unhandled crashes.
-  - Decorator `@capture_exceptions(tags=...)` and context managers.
-  - Ring-buffer breadcrumbs (HTTP, UI clicks, SQL queries).
-  - Background daemon thread batching with `atexit` zero-loss flushing.
-- **Partitioned PostgreSQL Schema**: Partition-ready event table design with BRIN indexing to handle 100K+ events daily without write locks.
-- **Real-Time Live Stream**: WebSockets push live incoming crashes to the frontend dashboard.
-
----
-
-## 📦 Repository Structure
+## Project Structure
 
 ```
 faultline/
 ├── backend/
 │   ├── app/
-│   │   ├── api/v1/             # Capture, Incidents, Analytics, WebSockets
-│   │   ├── models/             # SQLAlchemy Project, Incident, Event, Metric models
-│   │   ├── schemas/            # Pydantic v2 schemas with high-perf validation
-│   │   ├── services/           # Cache, Clustering, AI Analyzer, Queue, Storage
-│   │   ├── config.py           # Settings and configuration
-│   │   ├── database.py         # Dual-driver engine (PostgreSQL + SQLite fallback)
-│   │   ├── main.py             # FastAPI entrypoint with CORS & lifecycle
-│   │   └── worker.py           # Async batch consumer worker
-│   ├── tests/                  # Pytest test suite (Clustering, SDK, API, AI)
-│   ├── Dockerfile              # Multi-stage Python 3.11 runner
-│   └── requirements.txt
+│   │   ├── api/v1/          # Capture, Incidents, Projects, Analytics endpoints
+│   │   ├── models/          # SQLAlchemy entity models
+│   │   ├── schemas/         # Pydantic validation schemas
+│   │   ├── services/        # Clustering, AI analysis, caching, queue, storage
+│   │   ├── config.py        # Environment settings
+│   │   ├── database.py      # Database session and connection setup
+│   │   ├── main.py          # FastAPI application entrypoint
+│   │   └── worker.py        # Asynchronous batch processing worker
+│   ├── tests/               # Unit and integration test suite
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── schema.sql           # PostgreSQL table definitions with partitioning
 ├── sdk/
 │   └── python/
-│       ├── faultline/          # Custom SDK package (client, decorators, hooks)
+│       ├── faultline/       # SDK client, transport, decorators, breadcrumbs
 │       ├── pyproject.toml
 │       └── setup.py
 ├── frontend/
 │   ├── src/
-│   │   ├── components/         # Navbar, Sidebar, StackTraceViewer, AiSummaryCard
-│   │   ├── pages/              # Dashboard, Incidents, Detail, LiveStream, Analytics
-│   │   ├── api/                # REST client & WebSocket manager
-│   │   └── App.jsx
-│   ├── Dockerfile              # Multi-stage Node 18 -> Nginx Alpine
+│   │   ├── components/      # UI components (stack trace viewer, metrics, charts)
+│   │   ├── pages/           # Dashboard views
+│   │   └── api/             # API client and WebSocket handler
+│   ├── Dockerfile
 │   └── vite.config.js
 ├── examples/
-│   ├── simulate_traffic.py     # Burst load generator for demo crashes
-│   └── demo_payment_service.py # FastAPI microservice integration
+│   ├── simulate_traffic.py  # Telemetry load generator
+│   └── demo_payment_service.py # Example FastAPI service integration
 ├── deploy/
-│   ├── nginx.conf              # Production reverse proxy with SSL & rate-limiting
-│   ├── render.yaml             # Render.com IaC blueprint
-│   ├── ec2_setup.sh            # Automated AWS EC2 deployment script
-│   └── faultline.service       # Systemd unit file
-└── docker-compose.yml          # Full-stack Docker orchestration
+│   ├── nginx.conf           # Reverse proxy configuration
+│   ├── render.yaml          # Render deployment manifest
+│   ├── ec2_setup.sh         # Ubuntu EC2 installation script
+│   └── faultline.service    # Systemd unit file
+└── docker-compose.yml
 ```
 
----
+## Local Development Setup
 
-## 🚀 Quick Start (Local Development)
-
-### Option A: Running with Docker Compose (Recommended)
+### Docker Compose
 
 ```bash
-# 1. Clone repository
-git clone https://github.com/dhathrivaddiraju/faultline.git
-cd faultline
-
-# 2. Launch PostgreSQL, Redis, Backend, Worker, and Frontend
 docker compose up -d --build
-
-# 3. Open your browser:
-# Frontend Dashboard: http://localhost:3000
-# Backend API Docs:   http://localhost:8000/docs
 ```
 
----
+Services:
+- Frontend Dashboard: `http://localhost:3000`
+- Backend API Docs: `http://localhost:8000/docs`
+- PostgreSQL: `localhost:5432`
+- Redis: `localhost:6379`
 
-### Option B: Running Standalone (Zero-Dependency SQLite Mode)
+### Standalone Mode
 
-Faultline features automatic SQLite & in-memory queue fallback for instant local running without needing Docker or Redis installed:
+The backend automatically uses SQLite and an in-memory queue fallback when PostgreSQL and Redis instances are unreachable:
 
 ```bash
-# 1. Install Backend & SDK dependencies
 pip install -r backend/requirements.txt
 pip install -e sdk/python
+uvicorn backend.app.main:app --port 8000
+```
 
-# 2. Start the Backend API (runs embedded worker automatically)
-uvicorn backend.app.main:app --reload --port 8000
+Start the frontend:
 
-# 3. Start Frontend Dashboard (in a separate terminal)
+```bash
 cd frontend
 npm install
 npm run dev
-# Dashboard available at http://localhost:5173
 ```
 
----
+Dashboard is served at `http://localhost:5173`.
 
-## 🧪 Running the Test Suite
+## Test Execution
+
+Run the backend test suite:
 
 ```bash
 python -m pytest backend/tests -v
 ```
 
-Output:
-```
-backend/tests/test_ai_analyzer.py::test_ai_analyzer_hypothesis_and_remediation PASSED
-backend/tests/test_clustering.py::test_normalize_path PASSED
-backend/tests/test_clustering.py::test_normalize_string_strips_mem_addr_and_uuid PASSED
-backend/tests/test_clustering.py::test_fingerprint_deterministic_clustering PASSED
-backend/tests/test_clustering.py::test_fingerprint_distinct_for_different_errors PASSED
-backend/tests/test_ingest_api.py::test_capture_endpoint_performance_and_auth PASSED
-backend/tests/test_sdk.py::test_sdk_init_and_breadcrumbs PASSED
-backend/tests/test_sdk.py::test_sdk_decorator_captures_exception PASSED
-======================== 8 passed in 13.97s ========================
-```
-
----
-
-## ⚡ Generating Simulated Crashes
-
-To populate your dashboard with realistic crashes across multiple services:
-
-```bash
-python examples/simulate_traffic.py
-```
-
----
-
-## 🐍 Python SDK Integration Guide
+## SDK Usage
 
 ```python
 import faultline
 
-# 1. Initialize SDK
 faultline.init(
     api_key="fl_live_production_demo_key_99",
     endpoint="http://localhost:8000",
@@ -196,43 +140,29 @@ faultline.init(
     release="v1.0.0"
 )
 
-# 2. Record breadcrumbs (HTTP calls, UI clicks, DB actions)
-faultline.add_breadcrumb("User clicked 'Checkout'", category="ui")
-faultline.add_breadcrumb("Calling payment gateway", category="http", data={"amount": 99.00})
+faultline.add_breadcrumb("Order verification", category="checkout")
 
-# 3. Automatic Global Crash Capture:
-# Any unhandled exception is caught by sys.excepthook & flushed before exit!
+@faultline.capture_exceptions(tags={"service": "checkout"})
+def process_order(order_id: str):
+    pass
 
-# 4. Decorator Capture:
-@faultline.capture_exceptions(tags={"service": "billing"})
-def process_payment(token):
-    if not token:
-        raise ValueError("Invalid charge token")
-
-# 5. Manual Capture:
 try:
-    execute_transaction()
-except Exception as e:
-    faultline.capture_exception(e, tags={"importance": "high"})
+    charge_customer()
+except Exception as exc:
+    faultline.capture_exception(exc, tags={"criticality": "high"})
 ```
 
----
+## Environment Configuration
 
-## 🌐 Production Deployment
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql+asyncpg://postgres:postgres@localhost:5432/faultline` |
+| `REDIS_URL` | Redis server connection string | `redis://localhost:6379/0` |
+| `ANTHROPIC_API_KEY` | Anthropic API key for Claude 3.5 Sonnet analysis | None (uses heuristic fallback) |
+| `CLAUDE_MODEL` | Model identifier | `claude-3-5-sonnet-20241022` |
+| `INGESTION_BATCH_SIZE`| Queue batch fetch size | `50` |
+| `INGESTION_FLUSH_INTERVAL_MS` | Ingestion poll interval in ms | `200` |
 
-### 1. Render Deployment
-Deploy Faultline with one click using the included [`render.yaml`](deploy/render.yaml) blueprint:
-1. Push repository to GitHub.
-2. Link repo to Render.com -> Blueprints -> Create New Blueprint Instance.
+## License
 
-### 2. AWS EC2 Deployment
-On an Ubuntu 22.04 / 24.04 instance, run:
-```bash
-chmod +x deploy/ec2_setup.sh
-./deploy/ec2_setup.sh
-```
-
----
-
-## 📄 License
-MIT License. Crafted with precision for enterprise-grade error observability.
+MIT

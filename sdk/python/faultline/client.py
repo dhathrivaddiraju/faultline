@@ -4,12 +4,15 @@ import sys
 import threading
 from datetime import datetime, timezone
 from typing import Any, Optional
+
 from faultline.breadcrumbs import BreadcrumbBuffer
 from faultline.extractors import extract_stack_frames
 from faultline.transport import HttpTransport
 
-def utc_now_iso() -> str:
+
+def current_utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
 
 class FaultlineClient:
     def __init__(
@@ -29,11 +32,11 @@ class FaultlineClient:
         self.environment = environment
         self.release = release
         self.server_name = socket.gethostname()
-        
+
         self.breadcrumbs = BreadcrumbBuffer(max_breadcrumbs=max_breadcrumbs)
         self.tags: dict[str, str] = {}
         self.user: dict[str, Any] = {}
-        
+
         self.transport = HttpTransport(
             endpoint=endpoint,
             api_key=api_key,
@@ -41,21 +44,27 @@ class FaultlineClient:
             flush_interval_seconds=flush_interval_seconds,
             compress=compress
         )
-        
-        # Register atexit flush
+
         atexit.register(self.close)
-        
-        # Install global exception hooks if enabled
+
         if auto_hook:
             self.install_hooks()
 
-    def set_tag(self, key: str, value: str):
+    def set_tag(self, key: str, value: str) -> None:
         self.tags[key] = str(value)
 
-    def set_user(self, id: Optional[str] = None, email: Optional[str] = None, username: Optional[str] = None):
-        if id: self.user["id"] = id
-        if email: self.user["email"] = email
-        if username: self.user["username"] = username
+    def set_user(
+        self,
+        id: Optional[str] = None,
+        email: Optional[str] = None,
+        username: Optional[str] = None
+    ) -> None:
+        if id:
+            self.user["id"] = id
+        if email:
+            self.user["email"] = email
+        if username:
+            self.user["username"] = username
 
     def add_breadcrumb(
         self,
@@ -63,7 +72,7 @@ class FaultlineClient:
         category: str = "default",
         level: str = "info",
         data: Optional[dict[str, Any]] = None
-    ):
+    ) -> None:
         self.breadcrumbs.add(message=message, category=category, level=level, data=data)
 
     def capture_exception(
@@ -74,8 +83,7 @@ class FaultlineClient:
         user: Optional[dict[str, Any]] = None,
         handled: bool = True,
         level: str = "error"
-    ):
-        """Capture an exception and transmit to Faultline asynchronously."""
+    ) -> None:
         exc_type, exc_val, exc_tb = (None, None, None)
         if error is not None:
             exc_type = type(error)
@@ -87,16 +95,16 @@ class FaultlineClient:
         if exc_val is None:
             return
 
-        type_str = getattr(exc_type, "__name__", "Exception")
-        msg_str = str(exc_val)
+        type_name = getattr(exc_type, "__name__", "Exception")
+        message_str = str(exc_val)
         frames = extract_stack_frames(exc_tb) if exc_tb else []
 
         merged_tags = {**self.tags, **(tags or {})}
         merged_user = {**self.user, **(user or {})}
 
-        event = {
-            "exception_type": type_str,
-            "message": msg_str,
+        event_payload = {
+            "exception_type": type_name,
+            "message": message_str,
             "stack_trace": frames,
             "environment": self.environment,
             "handled": handled,
@@ -106,20 +114,19 @@ class FaultlineClient:
             "tags": merged_tags,
             "breadcrumbs": self.breadcrumbs.get_all(),
             "user": merged_user,
-            "timestamp": utc_now_iso()
+            "timestamp": current_utc_iso()
         }
 
-        self.transport.send(event)
+        self.transport.send(event_payload)
 
     def capture_message(
         self,
         message: str,
         level: str = "info",
         tags: Optional[dict[str, str]] = None
-    ):
-        """Capture a critical log or panic message."""
+    ) -> None:
         merged_tags = {**self.tags, **(tags or {})}
-        event = {
+        event_payload = {
             "exception_type": f"LogMessage.{level.upper()}",
             "message": message,
             "stack_trace": [],
@@ -131,30 +138,29 @@ class FaultlineClient:
             "tags": merged_tags,
             "breadcrumbs": self.breadcrumbs.get_all(),
             "user": self.user,
-            "timestamp": utc_now_iso()
+            "timestamp": current_utc_iso()
         }
-        self.transport.send(event)
+        self.transport.send(event_payload)
 
-    def install_hooks(self):
-        """Install global exception hooks into sys and threading."""
-        orig_sys_hook = sys.excepthook
+    def install_hooks(self) -> None:
+        previous_sys_hook = sys.excepthook
 
         def faultline_excepthook(exc_type, exc_val, exc_tb):
             self.capture_exception(error=exc_val, handled=False, level="fatal")
-            if orig_sys_hook:
-                orig_sys_hook(exc_type, exc_val, exc_tb)
+            if previous_sys_hook:
+                previous_sys_hook(exc_type, exc_val, exc_tb)
 
         sys.excepthook = faultline_excepthook
 
         if hasattr(threading, "excepthook"):
-            orig_thread_hook = threading.excepthook
+            previous_thread_hook = threading.excepthook
 
             def faultline_thread_hook(args):
                 self.capture_exception(error=args.exc_value, handled=False, level="fatal")
-                if orig_thread_hook:
-                    orig_thread_hook(args)
+                if previous_thread_hook:
+                    previous_thread_hook(args)
 
             threading.excepthook = faultline_thread_hook
 
-    def close(self):
+    def close(self) -> None:
         self.transport.flush_and_close()

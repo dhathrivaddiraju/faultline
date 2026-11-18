@@ -2,29 +2,26 @@ import React from 'react';
 import { 
   AlertTriangle, 
   CheckCircle, 
-  Clock, 
   Gauge, 
   Zap, 
-  ArrowUpRight,
   ChevronRight,
   TrendingUp,
   Cpu
 } from 'lucide-react';
 import MetricCard from '../components/MetricCard';
 import ErrorFrequencyChart from '../components/ErrorFrequencyChart';
-import { SeverityBadge, StatusBadge } from '../components/StatusBadge';
+import { SeverityBadge } from '../components/StatusBadge';
 
 export default function Dashboard({ stats, incidents = [], onSelectIncident, onNavigateTab }) {
   const unresolvedIncidents = incidents.filter(i => i.status !== 'resolved').slice(0, 6);
 
   return (
     <div className="space-y-6">
-      {/* Top Banner */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-extrabold tracking-tight text-white">System Observability Overview</h1>
+          <h1 className="text-xl font-bold tracking-tight text-white">System Observability Overview</h1>
           <p className="text-xs text-slate-400 mt-0.5">
-            Realtime high-throughput error telemetry, clustering, and AI remediation.
+            Ingestion throughput, error clustering, and failure telemetry.
           </p>
         </div>
 
@@ -37,26 +34,25 @@ export default function Dashboard({ stats, incidents = [], onSelectIncident, onN
         </button>
       </div>
 
-      {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <MetricCard
           title="Errors (24h)"
           value={stats?.total_events_today ?? 0}
-          subtitle="Total captured event stream"
+          subtitle="Total captured events"
           icon={AlertTriangle}
           color="rose"
         />
         <MetricCard
           title="Active Clusters"
           value={stats?.active_incidents ?? 0}
-          subtitle="Open error groups"
+          subtitle="Unresolved error groups"
           icon={TrendingUp}
           color="amber"
         />
         <MetricCard
           title="Ingestion Latency"
-          value={`${stats?.p99_ingest_latency_ms ?? 11.2}ms`}
-          subtitle="P99 HTTP 202 async response"
+          value={`${stats?.p99_ingest_latency_ms ?? 0}ms`}
+          subtitle="P99 async queue duration"
           icon={Zap}
           color="cyan"
         />
@@ -76,12 +72,11 @@ export default function Dashboard({ stats, incidents = [], onSelectIncident, onN
         />
       </div>
 
-      {/* Chart Section */}
       <div className="rounded-2xl border border-white/10 bg-dark-900/60 p-6 backdrop-blur-md">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-sm font-bold tracking-tight text-white">Error Frequency Over Time</h2>
-            <p className="text-xs text-slate-400">Aggregated hourly crash volume grouped by severity</p>
+            <p className="text-xs text-slate-400">Hourly event volume partitioned by severity tier</p>
           </div>
           <div className="flex items-center gap-3 text-xs">
             <span className="flex items-center gap-1.5 text-rose-400">
@@ -102,23 +97,21 @@ export default function Dashboard({ stats, incidents = [], onSelectIncident, onN
         <ErrorFrequencyChart data={stats?.timeseries || []} />
       </div>
 
-      {/* Bottom Grid: Active Incidents & Top Culprits */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Active Incidents */}
         <div className="lg:col-span-2 rounded-2xl border border-white/10 bg-dark-900/60 p-6 backdrop-blur-md space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-white">Recent Active Incidents</h2>
+            <h2 className="text-sm font-bold text-white">Active Incidents</h2>
             <button
               onClick={() => onNavigateTab('incidents')}
               className="text-xs text-rose-400 hover:text-rose-300 font-medium"
             >
-              See all &rarr;
+              View all
             </button>
           </div>
 
           {unresolvedIncidents.length === 0 ? (
             <div className="py-10 text-center text-xs text-slate-400">
-              🎉 All error clusters resolved! No open incidents.
+              No unresolved incident clusters. System operating normally.
             </div>
           ) : (
             <div className="space-y-2.5">
@@ -150,7 +143,7 @@ export default function Dashboard({ stats, incidents = [], onSelectIncident, onN
                     {inc.ai_analysis && (
                       <span className="flex items-center gap-1 rounded bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-medium text-rose-400 border border-rose-500/20">
                         <Cpu className="h-3 w-3" />
-                        AI Diagnosed
+                        Analyzed
                       </span>
                     )}
                     <ChevronRight className="h-4 w-4 text-slate-600 group-hover:text-rose-400 transition" />
@@ -161,28 +154,27 @@ export default function Dashboard({ stats, incidents = [], onSelectIncident, onN
           )}
         </div>
 
-        {/* Top Failing Culprits */}
         <div className="rounded-2xl border border-white/10 bg-dark-900/60 p-6 backdrop-blur-md space-y-4">
           <h2 className="text-sm font-bold text-white">Top Failing Culprits</h2>
-          
+
           <div className="space-y-3">
             {(stats?.top_culprits || []).length === 0 ? (
               <div className="py-8 text-center text-xs text-slate-500">
-                No failure data collected yet.
+                No failure data collected.
               </div>
             ) : (
-              stats.top_culprits.map((culprit, idx) => (
+              stats.top_culprits.map((item, idx) => (
                 <div key={idx} className="rounded-xl border border-white/5 bg-black/40 p-3 text-xs space-y-1">
                   <div className="flex items-center justify-between">
                     <span className="font-mono font-semibold text-rose-300 truncate max-w-[180px]">
-                      {culprit.culprit}
+                      {item.culprit}
                     </span>
                     <span className="font-mono text-slate-400 font-bold">
-                      {culprit.count} crashes
+                      {item.count} events
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-400 truncate">
-                    {culprit.title}
+                    {item.title}
                   </p>
                 </div>
               ))

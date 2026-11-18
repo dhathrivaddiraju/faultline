@@ -2,17 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { 
   ArrowLeft, 
   Check, 
-  CheckCircle2, 
   Clock, 
-  Users, 
   Hash, 
-  Layers, 
   Tag, 
   Server, 
   User, 
   Copy, 
-  RefreshCw,
-  AlertOctagon
+  RefreshCw 
 } from 'lucide-react';
 import { fetchIncidentDetail, updateIncidentStatus, triggerAiAnalysis } from '../api/client';
 import { SeverityBadge, StatusBadge } from '../components/StatusBadge';
@@ -24,53 +20,53 @@ export default function IncidentDetail({ incidentId, onBack }) {
   const [incident, setIncident] = useState(null);
   const [loading, setLoading] = useState(true);
   const [aiLoading, setAiLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('stacktrace'); // stacktrace, breadcrumbs, context, raw
-  const [copiedFp, setCopiedFp] = useState(false);
+  const [activeTab, setActiveTab] = useState('stacktrace');
+  const [copiedFingerprint, setCopiedFingerprint] = useState(false);
 
-  const loadData = async () => {
+  const loadIncident = async () => {
     try {
       setLoading(true);
       const data = await fetchIncidentDetail(incidentId);
       setIncident(data);
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      console.error(err);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData();
+    loadIncident();
   }, [incidentId]);
 
   const handleStatusChange = async (newStatus) => {
     try {
       await updateIncidentStatus(incidentId, newStatus);
       setIncident(prev => ({ ...prev, status: newStatus }));
-    } catch (e) {
-      console.error('Failed to update status', e);
+    } catch (err) {
+      console.error(err);
     }
   };
 
   const handleAiReanalyze = async () => {
     try {
       setAiLoading(true);
-      const res = await triggerAiAnalysis(incidentId);
-      if (res.ai_analysis) {
-        setIncident(prev => ({ ...prev, ai_analysis: res.ai_analysis }));
+      const response = await triggerAiAnalysis(incidentId);
+      if (response.ai_analysis) {
+        setIncident(prev => ({ ...prev, ai_analysis: response.ai_analysis }));
       }
-    } catch (e) {
-      console.error('Failed to trigger AI analysis', e);
+    } catch (err) {
+      console.error(err);
     } finally {
       setAiLoading(false);
     }
   };
 
-  const copyFingerprint = () => {
+  const copyFingerprintHash = () => {
     if (incident?.fingerprint) {
       navigator.clipboard.writeText(incident.fingerprint);
-      setCopiedFp(true);
-      setTimeout(() => setCopiedFp(false), 2000);
+      setCopiedFingerprint(true);
+      setTimeout(() => setCopiedFingerprint(false), 2000);
     }
   };
 
@@ -94,7 +90,6 @@ export default function IncidentDetail({ incidentId, onBack }) {
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
-      {/* Top navigation */}
       <div className="flex items-center justify-between">
         <button
           onClick={onBack}
@@ -104,7 +99,6 @@ export default function IncidentDetail({ incidentId, onBack }) {
           <span>Back to Incidents</span>
         </button>
 
-        {/* Status Actions */}
         <div className="flex items-center gap-2">
           {incident.status !== 'resolved' ? (
             <button
@@ -112,14 +106,14 @@ export default function IncidentDetail({ incidentId, onBack }) {
               className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-lg shadow-emerald-600/20 hover:bg-emerald-500 transition"
             >
               <Check className="h-3.5 w-3.5" />
-              <span>Mark as Resolved</span>
+              <span>Mark Resolved</span>
             </button>
           ) : (
             <button
               onClick={() => handleStatusChange('unresolved')}
               className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-white/10 transition"
             >
-              <span>Re-open Incident</span>
+              <span>Re-open</span>
             </button>
           )}
 
@@ -136,7 +130,6 @@ export default function IncidentDetail({ incidentId, onBack }) {
         </div>
       </div>
 
-      {/* Incident Header Card */}
       <div className="rounded-2xl border border-white/10 bg-dark-900/80 p-6 backdrop-blur-md space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1.5">
@@ -172,17 +165,16 @@ export default function IncidentDetail({ incidentId, onBack }) {
           </div>
         </div>
 
-        {/* Metadata pills */}
         <div className="flex items-center gap-4 text-xs text-slate-400 pt-2 border-t border-white/5 flex-wrap">
           <button
-            onClick={copyFingerprint}
+            onClick={copyFingerprintHash}
             className="flex items-center gap-1.5 rounded bg-white/5 px-2 py-1 font-mono text-[11px] text-slate-300 hover:bg-white/10 transition"
           >
             <Hash className="h-3 w-3 text-slate-500" />
             <span>Fingerprint: {incident.fingerprint?.slice(0, 12)}...</span>
-            {copiedFp ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+            {copiedFingerprint ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
           </button>
-          
+
           <div className="flex items-center gap-1.5">
             <Clock className="h-3.5 w-3.5 text-slate-500" />
             <span>First seen: {new Date(incident.first_seen).toLocaleString()}</span>
@@ -195,22 +187,19 @@ export default function IncidentDetail({ incidentId, onBack }) {
         </div>
       </div>
 
-      {/* Hero Section: Claude 3.5 Sonnet Analysis */}
       <AiSummaryCard
         analysis={incident.ai_analysis}
         onReanalyze={handleAiReanalyze}
         loading={aiLoading}
       />
 
-      {/* Detailed Inspection Tabs */}
       <div className="space-y-4">
-        {/* Tab Buttons */}
         <div className="flex items-center gap-2 border-b border-white/10 pb-2">
           {[
             { id: 'stacktrace', label: 'Stack Trace' },
             { id: 'breadcrumbs', label: 'Breadcrumbs Trail' },
             { id: 'context', label: 'Tags & Context' },
-            { id: 'raw', label: 'Raw Event JSON' }
+            { id: 'raw', label: 'Raw Payload' }
           ].map(tab => (
             <button
               key={tab.id}
@@ -226,7 +215,6 @@ export default function IncidentDetail({ incidentId, onBack }) {
           ))}
         </div>
 
-        {/* Tab Content */}
         {activeTab === 'stacktrace' && (
           <StackTraceViewer frames={latestEvent.stack_trace || []} />
         )}
@@ -237,7 +225,6 @@ export default function IncidentDetail({ incidentId, onBack }) {
 
         {activeTab === 'context' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-            {/* User Context */}
             <div className="rounded-xl border border-white/10 bg-dark-900/60 p-5 space-y-3">
               <div className="flex items-center gap-2 font-bold uppercase tracking-wider text-cyan-400">
                 <User className="h-4 w-4" />
@@ -250,11 +237,10 @@ export default function IncidentDetail({ incidentId, onBack }) {
               </div>
             </div>
 
-            {/* Server & Runtime Context */}
             <div className="rounded-xl border border-white/10 bg-dark-900/60 p-5 space-y-3">
               <div className="flex items-center gap-2 font-bold uppercase tracking-wider text-purple-400">
                 <Server className="h-4 w-4" />
-                <span>Runtime & Environment</span>
+                <span>Runtime Environment</span>
               </div>
               <div className="rounded-lg bg-black/50 p-3 font-mono space-y-1 border border-white/5">
                 <div>Environment: <span className="text-slate-200">{latestEvent.environment || 'production'}</span></div>
@@ -263,7 +249,6 @@ export default function IncidentDetail({ incidentId, onBack }) {
               </div>
             </div>
 
-            {/* Custom Tags */}
             <div className="md:col-span-2 rounded-xl border border-white/10 bg-dark-900/60 p-5 space-y-3">
               <div className="flex items-center gap-2 font-bold uppercase tracking-wider text-amber-400">
                 <Tag className="h-4 w-4" />

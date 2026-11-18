@@ -1,51 +1,48 @@
 import linecache
 import re
-import traceback
-from typing import Any, Optional
+from typing import Any
 
 SENSITIVE_KEYS = re.compile(r"(password|secret|token|api_?key|auth|bearer|credit|card|cvv)", re.I)
 
-def sanitize_value(val: Any) -> Any:
+
+def sanitize_repr(value: Any) -> str:
     try:
-        s = repr(val)
-        if len(s) > 200:
-            return s[:197] + "..."
-        return s
+        representation = repr(value)
+        if len(representation) > 200:
+            return representation[:197] + "..."
+        return representation
     except Exception:
         return "<unprintable>"
 
-def sanitize_locals(local_vars: dict[str, Any]) -> dict[str, Any]:
-    cleaned = {}
-    for k, v in local_vars.items():
-        if SENSITIVE_KEYS.search(k):
-            cleaned[k] = "[REDACTED]"
+
+def sanitize_scope_locals(local_variables: dict[str, Any]) -> dict[str, Any]:
+    sanitized = {}
+    for key, value in local_variables.items():
+        if SENSITIVE_KEYS.search(key):
+            sanitized[key] = "[REDACTED]"
         else:
-            cleaned[k] = sanitize_value(v)
-    return cleaned
+            sanitized[key] = sanitize_repr(value)
+    return sanitized
 
-def extract_stack_frames(tb) -> list[dict[str, Any]]:
-    """
-    Extract structured stack trace frames from a Python traceback object.
-    Includes filename, line number, function, pre/post code context lines, and locals.
-    """
+
+def extract_stack_frames(traceback_obj) -> list[dict[str, Any]]:
     frames = []
-    curr = tb
-    while curr is not None:
-        f = curr.tb_frame
-        lineno = curr.tb_lineno
-        filename = f.f_code.co_filename
-        function = f.f_code.co_name
+    current_tb = traceback_obj
 
-        # Extract source code lines around the error
+    while current_tb is not None:
+        frame = current_tb.tb_frame
+        lineno = current_tb.tb_lineno
+        filename = frame.f_code.co_filename
+        function_name = frame.f_code.co_name
+
         code_context = None
-        pre_context = []
-        post_context = []
+        pre_context: list[str] = []
+        post_context: list[str] = []
 
         try:
             linecache.checkcache(filename)
-            # Fetch surrounding lines
-            for l in range(max(1, lineno - 2), lineno):
-                line = linecache.getline(filename, l)
+            for line_idx in range(max(1, lineno - 2), lineno):
+                line = linecache.getline(filename, line_idx)
                 if line:
                     pre_context.append(line.rstrip())
 
@@ -53,27 +50,28 @@ def extract_stack_frames(tb) -> list[dict[str, Any]]:
             if target_line:
                 code_context = target_line.rstrip()
 
-            for l in range(lineno + 1, lineno + 3):
-                line = linecache.getline(filename, l)
+            for line_idx in range(lineno + 1, lineno + 3):
+                line = linecache.getline(filename, line_idx)
                 if line:
                     post_context.append(line.rstrip())
         except Exception:
             pass
 
-        # Determine if this frame belongs to user app vs python system libraries
-        in_app = not any(p in filename for p in ("site-packages", "dist-packages", "lib/python", "Lib/"))
+        in_app = not any(
+            pattern in filename
+            for pattern in ("site-packages", "dist-packages", "lib/python", "Lib/")
+        )
 
-        frame_data = {
+        frames.append({
             "filename": filename,
             "lineno": lineno,
-            "function": function,
+            "function": function_name,
             "code_context": code_context,
             "pre_context": pre_context,
             "post_context": post_context,
-            "vars": sanitize_locals(f.f_locals),
+            "vars": sanitize_scope_locals(frame.f_locals),
             "in_app": in_app
-        }
-        frames.append(frame_data)
-        curr = curr.tb_next
+        })
+        current_tb = current_tb.tb_next
 
     return frames

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Key, Copy, Check, Terminal, Code2, Shield, Bell, Send } from 'lucide-react';
+import { Key, Copy, Check, Terminal, Code2 } from 'lucide-react';
 
 export default function Settings({ project }) {
   const [copiedKey, setCopiedKey] = useState(false);
@@ -11,30 +11,22 @@ export default function Settings({ project }) {
 
   const pythonSnippet = `import faultline
 
-# Initialize Faultline monitoring SDK
 faultline.init(
     api_key="${apiKey}",
     endpoint="${endpoint}",
     environment="production"
 )
 
-# Optional: Add breadcrumbs leading to the event
-faultline.add_breadcrumb("User initiated checkout", category="ui")
+faultline.add_breadcrumb("Order verification", category="checkout")
 
-# 1. Automatic capture:
-# Unhandled exceptions are automatically captured via global hooks!
-
-# 2. Decorator capture:
 @faultline.capture_exceptions(tags={"service": "checkout"})
-def process_order(order_id):
-    # Your business logic
+def process_order(order_id: str):
     pass
 
-# 3. Manual capture:
 try:
     charge_customer()
-except Exception as e:
-    faultline.capture_exception(e, tags={"importance": "high"})
+except Exception as exc:
+    faultline.capture_exception(exc, tags={"criticality": "high"})
 `;
 
   const curlSnippet = `curl -X POST "${endpoint}/api/v1/capture" \\
@@ -68,20 +60,19 @@ except Exception as e:
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       <div>
-        <h1 className="text-xl font-extrabold tracking-tight text-white">Project Configuration & SDK Setup</h1>
+        <h1 className="text-xl font-bold tracking-tight text-white">Project Configuration & SDK Setup</h1>
         <p className="text-xs text-slate-400 mt-0.5">
-          API credentials, SDK integration guides, and ingestion endpoints.
+          API credentials, SDK integration, and ingestion endpoints.
         </p>
       </div>
 
-      {/* Project Key Card */}
       <div className="rounded-2xl border border-white/10 bg-dark-900/60 p-6 backdrop-blur-md space-y-4">
         <div className="flex items-center gap-2 text-sm font-bold text-white">
           <Key className="h-4 w-4 text-rose-400" />
           <span>Project Ingestion API Key</span>
         </div>
         <p className="text-xs text-slate-400">
-          Used to authenticate telemetry payloads sent by client/server SDKs to the ingestion pipeline.
+          Used to authenticate telemetry payloads dispatched by application SDKs.
         </p>
 
         <div className="flex items-center gap-2">
@@ -101,12 +92,11 @@ except Exception as e:
         </div>
       </div>
 
-      {/* Python SDK Setup Card */}
       <div className="rounded-2xl border border-white/10 bg-dark-900/60 p-6 backdrop-blur-md space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm font-bold text-white">
             <Code2 className="h-4 w-4 text-cyan-400" />
-            <span>Python SDK Quickstart</span>
+            <span>Python SDK Example</span>
           </div>
           <button
             onClick={() => copyText(pythonSnippet, setCopiedPython)}
@@ -122,12 +112,11 @@ except Exception as e:
         </div>
       </div>
 
-      {/* cURL Ingestion Endpoint Card */}
       <div className="rounded-2xl border border-white/10 bg-dark-900/60 p-6 backdrop-blur-md space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm font-bold text-white">
             <Terminal className="h-4 w-4 text-amber-400" />
-            <span>Direct HTTP Ingestion (cURL / Any Language)</span>
+            <span>Direct HTTP Endpoint</span>
           </div>
           <button
             onClick={() => copyText(curlSnippet, setCopiedCurl)}

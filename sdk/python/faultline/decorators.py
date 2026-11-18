@@ -5,26 +5,22 @@ from typing import Optional, Callable, Any
 
 _global_client = None
 
+
 def get_client():
     global _global_client
     return _global_client
 
-def set_client(client):
+
+def set_client(client) -> None:
     global _global_client
     _global_client = client
+
 
 def capture_exceptions(
     tags: Optional[dict[str, str]] = None,
     reraise: bool = True,
     level: str = "error"
 ):
-    """
-    Decorator to wrap functions and automatically capture any unhandled exceptions.
-    Usage:
-        @capture_exceptions(tags={"service": "billing"})
-        def charge_customer(card_id, amount):
-            ...
-    """
     def decorator(fn: Callable[..., Any]):
         if inspect.iscoroutinefunction(fn):
             @functools.wraps(fn)
@@ -32,9 +28,9 @@ def capture_exceptions(
                 client = get_client()
                 try:
                     return await fn(*args, **kwargs)
-                except Exception as err:
+                except Exception as exc:
                     if client:
-                        client.capture_exception(err, tags=tags, level=level, handled=False)
+                        client.capture_exception(exc, tags=tags, level=level, handled=False)
                     if reraise:
                         raise
             return async_wrapper
@@ -44,27 +40,22 @@ def capture_exceptions(
                 client = get_client()
                 try:
                     return fn(*args, **kwargs)
-                except Exception as err:
+                except Exception as exc:
                     if client:
-                        client.capture_exception(err, tags=tags, level=level, handled=False)
+                        client.capture_exception(exc, tags=tags, level=level, handled=False)
                     if reraise:
                         raise
             return sync_wrapper
     return decorator
 
+
 @contextmanager
 def capture(tags: Optional[dict[str, str]] = None, reraise: bool = True):
-    """
-    Context manager to safely execute a code block and capture unhandled exceptions.
-    Usage:
-        with faultline.capture(tags={"action": "checkout"}):
-            process_payment()
-    """
     client = get_client()
     try:
         yield
-    except Exception as err:
+    except Exception as exc:
         if client:
-            client.capture_exception(err, tags=tags, handled=False)
+            client.capture_exception(exc, tags=tags, handled=False)
         if reraise:
             raise

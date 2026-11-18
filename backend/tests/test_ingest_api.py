@@ -1,24 +1,23 @@
 import pytest
 from httpx import AsyncClient, ASGITransport
-from backend.app.main import app, seed_default_project
+from backend.app.main import app, initialize_default_project
 from backend.app.database import create_tables, init_engine
+
 
 @pytest.mark.asyncio
 async def test_capture_endpoint_performance_and_auth():
     await init_engine()
     await create_tables()
-    await seed_default_project()
+    await initialize_default_project()
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        # 1. Test missing API key returns 401
-        res = await ac.post("/api/v1/capture", json={
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        unauthorized_response = await client.post("/api/v1/capture", json={
             "exception_type": "RuntimeError",
             "message": "Crash"
         })
-        assert res.status_code == 401
+        assert unauthorized_response.status_code == 401
 
-        # 2. Test valid API key (using default seeded demo key)
         payload = {
             "exception_type": "ValueError",
             "message": "Invalid credit card CVV format",
@@ -39,13 +38,13 @@ async def test_capture_endpoint_performance_and_auth():
             ]
         }
 
-        res = await ac.post(
+        response = await client.post(
             "/api/v1/capture",
             json=payload,
             headers={"X-Project-Key": "fl_live_production_demo_key_99"}
         )
-        assert res.status_code == 202
-        data = res.json()
-        assert data["status"] == "accepted"
-        assert "event_id" in data
-        assert "queued successfully" in data["message"]
+        assert response.status_code == 202
+        response_data = response.json()
+        assert response_data["status"] == "accepted"
+        assert "event_id" in response_data
+        assert "Event queued" in response_data["message"]
