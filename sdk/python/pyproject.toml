@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "faultline-sdk"
+version = "1.0.0"
+authors = [
+  { name="Dhathri Vaddiraju", email="dhathrivaddiraju@gmail.com" },
+]
+description = "Lightweight Python SDK for Faultline - AI Error Monitoring Platform"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "httpx>=0.25.0",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: System :: Monitoring",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/dhathrivaddiraju/faultline"
+"Bug Tracker" = "https://github.com/dhathrivaddiraju/faultline/issues"
